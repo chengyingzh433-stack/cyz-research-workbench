@@ -1,8 +1,18 @@
 # CYZ 研究工作台
 
-这是正在开发的 Windows 桌面工作台，配合 [CYZ 教育研究工作流 0.3.0](https://github.com/chengyingzh433-stack/cyz-edu-research/releases/tag/0.3.0) 使用。工作台在本机运行，源码保存在独立私有仓库；研究项目、论文和缓存不随源码上传。当前是开发版本，还没有安装包。
+这是正在开发的 Windows 桌面工作台，配合 [CYZ 教育研究工作流 0.3.0](https://github.com/chengyingzh433-stack/cyz-edu-research/releases/tag/0.3.0) 使用。源码和 Windows x64 安装测试版公开下载；研究项目、论文和缓存不随源码上传。安装包尚未签名，研究功能仍有未完成项。
+
+[下载安装测试版](https://github.com/chengyingzh433-stack/cyz-research-workbench/releases/tag/v0.1.0-preview.1) · [安装和第一次使用](docs/windows-install.md) · [让 Codex 帮你部署](docs/codex-deploy.md)
 
 工作流 Skill 是研究规则的来源，工作台负责界面、材料、版本与任务。每次开始研究，工作台检查 Codex 是否识别并启用 `cyz-edu-research`，再显式传入该 Skill。缺失、被禁用或版本不符会报错，不静默退回普通聊天。
+
+## 和工作流仓库是什么关系
+
+本仓库是桌面界面，[cyz-edu-research](https://github.com/chengyingzh433-stack/cyz-edu-research) 是研究规则和项目模板的来源。工作流可以独立装进 Codex 使用，不依赖工作台；当前工作台 **0.1.0 固定依赖工作流 0.3.0**，不会自动跟随上游的最新版本。
+
+Windows 安装版自带主工作流和运行环境；Codex 登录、MinerU Desk 及模型、中文或英文语言 Skill 不随包提供。它们各自在什么环节需要、如何安装和检查，见公开的 [两个项目的依赖说明](https://github.com/chengyingzh433-stack/cyz-edu-research/blob/main/docs/workbench-and-workflow.md)。
+
+两个仓库都已公开。工作台安装程序在本仓库的预发布页面，工作流 Skill ZIP 在工作流仓库的发布页面；两种文件用途不同，不要混装。
 
 ## 已经能做什么
 
@@ -15,7 +25,11 @@
 - 将研究任务放在独立工作副本中。新写的 Markdown 先作为候选成果展示，用户确认后才保存到正式项目。
 - 保存前检查版本。如果原稿已被修改，保留双方内容，不直接覆盖。
 
-## 本地启动
+## 安装后使用
+
+双击安装包，按向导选择目录，之后从桌面或开始菜单的书本图标打开。主工作流 Skill 会自动安装到 Codex；无需另装 Node、pnpm 或 Python。已有 Skill 的不同内容会保留，不自动覆盖。研究对话仍需要本机 Codex 已登录，PDF 解析仍需要本机 MinerU 和模型。详细步骤见 [Windows 安装版说明](docs/windows-install.md)。
+
+## 从源码启动（开发者）
 
 开发验证环境是 Windows、Node 24.16.0、pnpm 11.19.0 和 Codex CLI 0.153.4。安装依赖需要联网；首次安装 SQLite 原生依赖可能需要 C++ 构建工具。
 
@@ -48,7 +62,7 @@ pnpm start
 
 ## 当前边界
 
-内置原版 PDF 阅读器及图文对照、项目备份恢复、本机 Agent API、异常任务的完整处置、安装包和完整研究示例尚未交付。阶段质量仍显示“待核查”，不会把模型执行结束当成研究验收通过。
+内置原版 PDF 阅读器及图文对照、项目备份恢复、本机 Agent API、异常任务的完整处置和完整研究示例尚未交付。安装包是本地测试版，不代表这些功能已完成。阶段质量仍显示“待核查”，不会把模型执行结束当成研究验收通过。
 
 应用重启后若发现未确认结束的任务，会标记“运行状态待核实”并阻止重复发起。点击“核实任务状态”只读取原会话，确认结束后恢复回复，不重新执行。如果记录缺失或仍在运行，会说明原因并保留未知状态；不要删除状态文件绕过检查。
 

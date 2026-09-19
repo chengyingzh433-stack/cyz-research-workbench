@@ -1,6 +1,7 @@
 import {app,BrowserWindow,ipcMain,dialog,shell,Tray,Menu,nativeImage} from 'electron';
 import {join,resolve,dirname} from 'node:path';
 import {workflowSkillPath} from '../../../../packages/workflow-adapter/src/skill-binding.ts';
+import {installBundledWorkflow} from '../../../../packages/workflow-adapter/src/bundled-workflow.ts';
 import {existsSync,readFileSync} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -48,7 +49,9 @@ async function openProject(root:string){
   if(!existsSync(join(root,'.cyz/project.json'))){
     const skill=dirname(workflowSkillPath());
     if(existsSync(join(skill,'scripts/init_project.py'))&&!existsSync(join(root,'00-项目状态.md'))){
-      await promisify(execFile)('py',['-3.11',join(skill,'scripts/init_project.py'),root,'--entry-mode','discovery','--allow-existing'],{windowsHide:true,encoding:'utf8'});
+      const python=app.isPackaged?join(process.resourcesPath,'runtime/python/python.exe'):'py';
+      const prefix=app.isPackaged?['-X','utf8']:['-3.11','-X','utf8'];
+      await promisify(execFile)(python,[...prefix,join(skill,'scripts/init_project.py'),root,'--entry-mode','discovery','--allow-existing'],{windowsHide:true,encoding:'utf8'});
     }
     next=await ProjectService.create(root);
   }else next=await ProjectService.open(root);
@@ -117,7 +120,19 @@ async function setup(){
   tray.setContextMenu(Menu.buildFromTemplate([{label:'显示工作台',click:()=>window.show()},{label:'退出',click:async()=>{if(active){const choice=await dialog.showMessageBox(window,{type:'question',message:'研究任务仍在运行',buttons:['后台继续','停止任务'],defaultId:0,cancelId:0});if(choice.response===1){await engine?.stop();window.show();}return;}quitting=true;app.quit();}}]));
 }
 
-app.whenReady().then(async()=>{if(process.env.CYZ_PROJECT_ROOT)await openProject(process.env.CYZ_PROJECT_ROOT);await setup();}).catch(error=>{console.error(error instanceof Error?error.message:'STARTUP_FAILED');app.exit(1)});
+app.whenReady().then(async()=>{
+  if(process.argv.includes('--install-workflow')){
+    if(!app.isPackaged)throw new Error('PACKAGED_RESOURCES_REQUIRED');
+    try{installBundledWorkflow(join(process.resourcesPath,'workflow'));app.exit(0);}
+    catch(error){console.error(error instanceof Error?error.message:'WORKFLOW_INSTALL_FAILED');app.exit(2);}
+    return;
+  }
+  if(app.isPackaged){
+    try{installBundledWorkflow(join(process.resourcesPath,'workflow'));}
+    catch(error){await dialog.showMessageBox({type:'warning',title:'工作流 Skill 需要检查',message:'未替换已有 Skill，也未删除任何文件。',detail:'自动安装或校验没有完成。请在 Codex 中检查 cyz-edu-research 0.3.0。\n'+(error instanceof Error?error.message:'安装失败'),buttons:['知道了']});}
+  }
+  if(process.env.CYZ_PROJECT_ROOT)await openProject(process.env.CYZ_PROJECT_ROOT);await setup();
+}).catch(error=>{console.error(error instanceof Error?error.message:'STARTUP_FAILED');app.exit(1)});
 app.on('window-all-closed',()=>{if(!active)app.quit()});
 app.on('before-quit',event=>{
   if(pendingOperations){

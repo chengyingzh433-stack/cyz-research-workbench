@@ -1,0 +1,38 @@
+appId: com.cyz.researchworkbench
+productName: CYZ 研究工作台
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - package.json
+asar: true
+asarUnpack:
+  - node_modules/better-sqlite3/**/*
+npmRebuild: false
+extraResources:
+  - from: .tmp/installer-resources/workflow
+    to: workflow
+  - from: .tmp/installer-resources/runtime
+    to: runtime
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: apps/desktop/public/icons/book.ico
+  executableName: CYZ Research Workbench
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: CYZ 研究工作台
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+  installerLanguages: [zh_CN, en_US]
+  displayLanguageSelector: false
+  language: '2052'
+  include: build/installer.nsh
+  artifactName: CYZ-Research-Workbench-${version}-Setup-${arch}.${ext}
