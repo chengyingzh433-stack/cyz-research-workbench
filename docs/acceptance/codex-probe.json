@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-19T03:20:48.250Z",
+  "cliVersion": "codex-cli 0.153.4",
+  "nodeVersion": "v24.16.0",
+  "platform": "win32",
+  "initialization": "passed",
+  "accountRead": "passed",
+  "authenticated": true,
+  "modelTurnsStarted": 0,
+  "notifications": [
+    "remoteControl/status/changed"
+  ],
+  "stderrBytes": 0,
+  "rawStderrRetained": false,
+  "privateAccountFieldsRetained": false,
+  "generationCommand": "codex app-server generate-ts --out packages/codex-adapter/generated",
+  "generatedFileCount": 706,
+  "protocolInventorySha256": "f8da7d8c75688c87195533a81176b1ac7741bed5dd1c9fbbad993e288a71ab36",
+  "notYetVerified": [
+    "turn/start",
+    "turn/interrupt",
+    "thread/resume",
+    "user input",
+    "approvals",
+    "sandbox writes"
+  ]
+}

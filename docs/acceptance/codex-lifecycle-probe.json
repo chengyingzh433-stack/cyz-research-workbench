@@ -1,0 +1,27 @@
+{
+  "recordedAt": "2026-09-19T04:01:33.554Z",
+  "modelTurnsStarted": 3,
+  "results": [
+    {
+      "name": "initial",
+      "status": "completed",
+      "replyMatched": true
+    },
+    {
+      "name": "resume",
+      "status": "completed",
+      "replyMatched": true
+    },
+    {
+      "name": "interrupt",
+      "status": "interrupted",
+      "replyMatched": true
+    }
+  ],
+  "notYetVerified": [
+    "interactive approval",
+    "user input",
+    "sandbox write enforcement"
+  ],
+  "rawConversationRetained": false
+}

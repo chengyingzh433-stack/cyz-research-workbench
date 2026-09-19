@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - packages/*
+allowBuilds:
+  better-sqlite3: true
+  electron: true
+  esbuild: true
+minimumReleaseAgeExclude:
+  - '@types/node@26.6.2'
+  - electron@44.4.3

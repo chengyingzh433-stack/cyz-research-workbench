@@ -1,0 +1,21 @@
+{
+  "recordedAt": "2026-09-19T03:59:11.463Z",
+  "modelTurnsStarted": 1,
+  "status": "completed",
+  "sandbox": "workspaceWrite",
+  "expectedReply": true,
+  "eventTypes": [
+    "session.started",
+    "task.status.changed",
+    "message.delta",
+    "message.completed",
+    "usage.updated"
+  ],
+  "rawConversationRetained": false,
+  "notYetVerified": [
+    "interrupt",
+    "resume",
+    "approval",
+    "sandbox write enforcement"
+  ]
+}
