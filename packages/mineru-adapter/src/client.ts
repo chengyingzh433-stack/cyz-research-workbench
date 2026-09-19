@@ -45,6 +45,11 @@ export class DeskClient implements ConversionClient{
     return {offline:state.settings?.offline===true&&!state.settings.serverUrl&&!state.settings.vlmUrl};
   }
   async pages(source:string){const result=await run(this.python,['-c',"import sys,json; from pathlib import Path; sys.path.insert(0,sys.argv[1]); from convert_pdf_to_md import get_pdf_info; print(json.dumps(get_pdf_info(Path(sys.argv[2]))[0]))",join(this.skill,'scripts'),source],30000);return JSON.parse(result.stdout) as number}
+  async submissions(){
+    const state=await this.command('request','GET','state');
+    if(!Array.isArray(state.tasks))throw new Error('MINERU_INVALID_RESPONSE');
+    return state.tasks.map((task:{id:string;source:string;outputRoot:string;options:Record<string,unknown>})=>({id:task.id,source:task.source,outputRoot:task.outputRoot,options:task.options}));
+  }
   async submit(requestFile:string){const result=await this.command('submit',requestFile);if(!Array.isArray(result)||result.length!==1||typeof result[0].id!=='string')throw new Error('MINERU_INVALID_SUBMISSION');return result[0].id as string}
   async task(id:string){if(!/^[A-Za-z0-9-]+$/.test(id))throw new Error('INVALID_MINERU_TASK');const task=await this.command('request','GET','tasks/'+id);return {id:task.id,status:task.status,source:task.source}}
   async content(id:string){if(!/^[A-Za-z0-9-]+$/.test(id))throw new Error('INVALID_MINERU_TASK');const result=await this.command('request','GET','tasks/'+id+'/content');return result.original as string}

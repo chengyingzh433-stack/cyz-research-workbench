@@ -1,9 +1,12 @@
 import type {ProjectService} from './project.ts';
 import {randomUUID,createHash} from 'node:crypto';
-import {mkdirSync,writeFileSync,readFileSync,statSync} from 'node:fs';
+import {mkdirSync,writeFileSync,readFileSync,statSync,existsSync} from 'node:fs';
+import {isDeepStrictEqual} from 'node:util';
 import {resolve} from 'node:path';
 import {projectPath} from './path-policy.ts';
+import {cacheFiles,type CacheFile} from './conversion-cache.ts';
 export interface ConversionClient{
+  submissions?():Promise<{id:string;source:string;outputRoot:string;options:Record<string,unknown>}[]>;
   preflight():Promise<{offline:boolean}>;
   pages(source:string):Promise<number>;
   submit(requestFile:string):Promise<string>;
@@ -65,25 +68,63 @@ export async function pollConversion(service:ProjectService,id:string,client:Con
   if(!['completed','reused'].includes(task.status)){change(service,job,{status:'reconciling'});throw new Error('CONVERSION_STATUS_UNKNOWN')}
   if(job.status==='sample_running'){
     const content=await client.content(job.taskId);if(typeof content!=='string'||content.trim().length<20||content.length>10_000_000)throw new Error('SAMPLE_CONTENT_INVALID');
-    writeFileSync(jobPath(service,job,'sample.md'),content);return change(service,job,{status:'sample_review'});
+    writeFileSync(jobPath(service,job,'sample.md'),content);return change(service,job,{status:'sample_review',paperHash:digest(Buffer.from(content))});
   }
   job=change(service,job,{status:'finalizing'});
   await client.finalize(job.taskId!,path,jobPath(service,job,'cache'));
+  const files=cacheFiles(jobPath(service,job,'cache'));
   const paper=readFileSync(jobPath(service,job,'cache/paper.md')),map=readFileSync(jobPath(service,job,'cache/source_map.json'));
   const metadata=JSON.parse(map.toString('utf8'));if(metadata.pdf_sha256!==source.sha256||!Array.isArray(metadata.pages)||!metadata.pages.length)throw new Error('CACHE_SOURCE_MISMATCH');
   sourceInfo(service,job.sourceId);
-  return change(service,job,{status:'completed',paperHash:digest(paper),mapHash:digest(map)});
+  return service.db.transaction(()=>{
+    service.db.prepare('DELETE FROM conversion_files WHERE conversionId=?').run(job.id);
+    const insert=service.db.prepare('INSERT INTO conversion_files(conversionId,relpath,sha256) VALUES(?,?,?)');
+    for(const file of files)insert.run(job.id,file.relpath,file.sha256);
+    return change(service,job,{status:'completed',paperHash:digest(paper),mapHash:digest(map)});
+  })();
 })}
 export async function approveSample(service:ProjectService,id:string,client:ConversionClient):Promise<Conversion>{return locked(id,async()=>{
   const job=get(service,id);if(['full_running','finalizing','completed'].includes(job.status))return job;
   if(job.status!=='sample_review')throw new Error('SAMPLE_REVIEW_REQUIRED');
+  readConversion(service,id);
   service.emit('conversion.sample.approved',{id,sourceId:job.sourceId});return submit(service,job,client,null);
 })}
 export function listConversions(service:ProjectService):Conversion[]{return service.db.prepare('SELECT * FROM conversions ORDER BY rowid').all() as Conversion[]}
+export async function reconcileConversion(service:ProjectService,id:string,client:ConversionClient){return locked(id,async()=>{
+  const job=get(service,id);if(job.status!=='reconciling')return job;
+  const {path}=sourceInfo(service,job.sourceId);
+  if(!client.submissions)throw new Error('CONVERSION_RECONCILE_UNAVAILABLE');
+  const stage=existsSync(jobPath(service,job,'full-request.json'))?'full':'sample';
+  const requestPath=jobPath(service,job,stage+'-request.json');
+  if(!existsSync(requestPath)||statSync(requestPath).size>20000)throw new Error('CONVERSION_REQUEST_INVALID');
+  const request=JSON.parse(readFileSync(requestPath,'utf8'));
+  const output=jobPath(service,job,stage+'-output');
+  if(!Array.isArray(request.files)||request.files.length!==1||request.files[0]!==path||request.outputRoot!==output)throw new Error('CONVERSION_REQUEST_INVALID');
+  const pages=stage==='full'?'':request.options?.pages;
+  if(stage==='sample'&&!/^1-[1-3]$/.test(pages??''))throw new Error('CONVERSION_REQUEST_INVALID');
+  const expectedId=stage==='sample'?job.sampleTaskId:(job.taskId!==job.sampleTaskId?job.taskId:null);
+  const matches=(await client.submissions()).filter(task=>
+    typeof task.id==='string'&&/^[A-Za-z0-9-]+$/.test(task.id)&&(!expectedId||task.id===expectedId)&&
+    typeof task.source==='string'&&samePath(task.source,path)&&typeof task.outputRoot==='string'&&samePath(task.outputRoot,output)&&
+    task.options&&Object.entries(options).every(([key,value])=>isDeepStrictEqual(task.options[key],value))&&
+    (task.options.pages??'')===pages
+  );
+  if(matches.length!==1){service.emit('conversion.reconcile.unresolved',{id,reason:matches.length?'AMBIGUOUS_MATCH':'NO_MATCH'});return job}
+  return change(service,job,{status:stage+'_running',taskId:matches[0].id,sampleTaskId:stage==='sample'?matches[0].id:job.sampleTaskId});
+})}
 export function readConversion(service:ProjectService,id:string){
   const job=get(service,id);sourceInfo(service,job.sourceId);
-  if(job.status==='sample_review')return {scope:'sample',text:readFileSync(jobPath(service,job,'sample.md'),'utf8'),pages:[]};
+  if(job.status==='sample_review'){
+    const path=jobPath(service,job,'sample.md');if(statSync(path).size>10_000_000)throw new Error('CACHE_TOO_LARGE');
+    const bytes=readFileSync(path);if(digest(bytes)!==job.paperHash)throw new Error('CACHE_INTEGRITY_ERROR');
+    return {scope:'sample',text:bytes.toString('utf8'),pages:[]};
+  }
   if(job.status!=='completed')throw new Error('CONVERSION_NOT_READY');
+  const expected=service.db.prepare('SELECT relpath,sha256 FROM conversion_files WHERE conversionId=? ORDER BY relpath').all(id) as CacheFile[];
+  if(!expected.length)throw new Error('CACHE_VERIFICATION_REQUIRED');
+  let actual:CacheFile[];
+  try{actual=cacheFiles(jobPath(service,job,'cache'))}catch{throw new Error('CACHE_INTEGRITY_ERROR')}
+  if(JSON.stringify(expected)!==JSON.stringify(actual))throw new Error('CACHE_INTEGRITY_ERROR');
   const paperPath=jobPath(service,job,'cache/paper.md');if(statSync(paperPath).size>20_000_000)throw new Error('CACHE_TOO_LARGE');
   const paper=readFileSync(paperPath),map=readFileSync(jobPath(service,job,'cache/source_map.json'));
   if(digest(paper)!==job.paperHash||digest(map)!==job.mapHash)throw new Error('CACHE_INTEGRITY_ERROR');

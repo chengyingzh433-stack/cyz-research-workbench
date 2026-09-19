@@ -8,7 +8,7 @@ import {prepareTask} from '../../../../packages/project-service/src/tasks.ts';
 import {listCandidates,publishCandidate} from '../../../../packages/project-service/src/candidates.ts';
 import {reconcileTask} from '../../../../packages/project-service/src/recovery.ts';
 import {readDocument,saveDocument} from '../../../../packages/project-service/src/documents.ts';
-import {startConversion,pollConversion,approveSample,readConversion,listConversions} from '../../../../packages/project-service/src/conversions.ts';
+import {startConversion,pollConversion,approveSample,readConversion,listConversions,reconcileConversion} from '../../../../packages/project-service/src/conversions.ts';
 import {DeskClient,findDesk} from '../../../../packages/mineru-adapter/src/client.ts';
 import {projectPath} from '../../../../packages/project-service/src/path-policy.ts';
 import {CodexEngine} from '../../../../packages/codex-adapter/src/engine.ts';
@@ -67,7 +67,7 @@ function handler(name:string,fn:(...args:any[])=>unknown){
 async function setup(){
   handler('project.snapshot',()=>project?{...project.snapshot(),events:project.eventsAfter(0)}:null);
   handler('project.choose',async()=>{const result=await dialog.showOpenDialog(window,{properties:['openDirectory','createDirectory'],title:'选择研究项目文件夹'});if(result.canceled)return null;return openProject(result.filePaths[0]);});
-  handler('source.import',async(id:unknown)=>{const service=current(id);const result=await dialog.showOpenDialog(window,{properties:['openFile','multiSelections'],filters:[{name:'研究材料',extensions:['pdf','md','txt','png','jpg','jpeg']}]});if(result.canceled)return [];const results=[];for(const path of result.filePaths)results.push(await service.importSource(path));return results;});
+  handler('source.import',(id:unknown)=>parsingOperation(async()=>{const service=current(id);const result=await dialog.showOpenDialog(window,{properties:['openFile','multiSelections'],filters:[{name:'研究材料',extensions:['pdf','md','txt','png','jpg','jpeg']}]});if(result.canceled)return [];const results=[];for(const path of result.filePaths)results.push(await service.importSource(path));return results;}));
   handler('source.open',async(id:unknown,sourceId:unknown)=>{const service=current(id);const source=service.snapshot().sources.find(s=>s.id===text(sourceId));if(!source)throw new Error('SOURCE_NOT_FOUND');const error=await shell.openPath(projectPath(service.root,source.relpath));if(error)throw new Error('无法打开材料');});
   handler('artifact.read',(id:unknown,path:unknown)=>{const service=current(id);const relpath=text(path,220);const file=projectPath(service.root,relpath);const artifact=service.snapshot().artifacts.find(a=>a.relpath===relpath);return {text:existsSync(file)?readFileSync(file,'utf8'):'',versionId:artifact?.currentVersionId??null};});
   handler('artifact.save',(id:unknown,path:unknown,content:unknown,base:unknown)=>{if(typeof content!=='string'||content.length>5_000_000||(base!==null&&typeof base!=='string'))throw new Error('INVALID_INPUT');return current(id).saveArtifact(text(path,220),content,base);});
@@ -79,6 +79,7 @@ async function setup(){
     return saveDocument(current(id),'03-文献证据矩阵.md',content,base,hash);
   });
   handler('parsing.list',(id:unknown)=>listConversions(current(id)));
+  handler('parsing.reconcile',(id:unknown,target:unknown)=>{const service=current(id);return parsingOperation(async()=>reconcileConversion(service,text(target,100),await desk()))});
   handler('parsing.read',(id:unknown,target:unknown)=>readConversion(current(id),text(target,100)));
   handler('parsing.start',(id:unknown,source:unknown)=>{const service=current(id);return parsingOperation(async()=>startConversion(service,text(source,100),await desk()))});
   handler('parsing.poll',(id:unknown,target:unknown)=>{const service=current(id);return parsingOperation(async()=>pollConversion(service,text(target,100),await desk()))});
@@ -117,4 +118,11 @@ async function setup(){
 
 app.whenReady().then(async()=>{if(process.env.CYZ_PROJECT_ROOT)await openProject(process.env.CYZ_PROJECT_ROOT);await setup();}).catch(error=>{console.error(error instanceof Error?error.message:'STARTUP_FAILED');app.exit(1)});
 app.on('window-all-closed',()=>{if(!active)app.quit()});
-app.on('before-quit',()=>{quitting=true;engine?.close();project?.close();tray?.destroy()});
+app.on('before-quit',event=>{
+  if(pendingOperations){
+    event.preventDefault();quitting=false;
+    if(window&&!window.isDestroyed()){window.show();void dialog.showMessageBox(window,{type:'info',message:'本地操作尚未结束，请稍后再退出',detail:'正在处理材料或保存解析状态。工作台不会取消 MinerU 中的任务。',buttons:['知道了']});}
+    return;
+  }
+  quitting=true;engine?.close();project?.close();tray?.destroy();
+});

@@ -1,10 +1,10 @@
 import {afterEach,expect,it} from 'vitest';
-import {mkdtemp,writeFile,readFile,mkdir} from 'node:fs/promises';
+import {mkdtemp,writeFile,readFile,mkdir,unlink,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {ProjectService} from '../../packages/project-service/src/project.ts';
-import {startConversion,pollConversion,approveSample,listConversions,readConversion,type ConversionClient} from '../../packages/project-service/src/conversions.ts';
+import {startConversion,pollConversion,approveSample,listConversions,readConversion,reconcileConversion,type ConversionClient} from '../../packages/project-service/src/conversions.ts';
 import {prepareTask} from '../../packages/project-service/src/tasks.ts';
 import {listCandidates} from '../../packages/project-service/src/candidates.ts';
 const services:ProjectService[]=[];
@@ -31,6 +31,31 @@ it('requires sample review before full conversion and never submits twice',async
   expect((await pollConversion(service,job.id,client)).status).toBe('completed');expect(requests).toHaveLength(2);
   const cached=await startConversion(service,source.id,client);expect(cached.status).toBe('completed');expect(requests).toHaveLength(2);
 });
+it('rejects changed sample text before reading or approving full conversion',async()=>{
+  const {root,service,source,client,requests}=await setup();
+  const job=await startConversion(service,source.id,client);await pollConversion(service,job.id,client);
+  await writeFile(join(root,'.cyz/conversions',job.id,'sample.md'),'changed sample');
+  expect(()=>readConversion(service,job.id)).toThrow('CACHE_INTEGRITY_ERROR');
+  await expect(approveSample(service,job.id,client)).rejects.toThrow('CACHE_INTEGRITY_ERROR');
+  expect(requests).toHaveLength(1);
+});
+it.each(['changed','missing'])('rejects %s cached image assets',async(mode)=>{
+  const {root,service,source,client}=await setup();const finalize=client.finalize;
+  client.finalize=async(id,path,output)=>{await finalize(id,path,output);await mkdir(join(output,'assets'));await writeFile(join(output,'assets/figure.jpg'),'original image bytes')};
+  const job=await startConversion(service,source.id,client);await pollConversion(service,job.id,client);await approveSample(service,job.id,client);await pollConversion(service,job.id,client);
+  expect(readConversion(service,job.id).scope).toBe('full');
+  const asset=join(root,'.cyz/conversions',job.id,'cache/assets/figure.jpg');
+  if(mode==='changed')await writeFile(asset,'different image');else await unlink(asset);
+  expect(()=>readConversion(service,job.id)).toThrow('CACHE_INTEGRITY_ERROR');
+});
+it('refuses a linked cache asset directory before marking conversion complete',async()=>{
+  const {service,source,client}=await setup();const finalize=client.finalize;
+  const external=await mkdtemp(join(tmpdir(),'cyz 外部资产 '));await writeFile(join(external,'figure.jpg'),'external');
+  client.finalize=async(id,path,output)=>{await finalize(id,path,output);await symlink(external,join(output,'assets'),'junction')};
+  const job=await startConversion(service,source.id,client);await pollConversion(service,job.id,client);await approveSample(service,job.id,client);
+  await expect(pollConversion(service,job.id,client)).rejects.toThrow('INVALID_PATH');
+  expect(listConversions(service)[0].status).toBe('finalizing');
+});
 it('refuses online operation without submitting the source',async()=>{
   const {service,source,client,requests,setOffline}=await setup();setOffline(false);
   await expect(startConversion(service,source.id,client)).rejects.toThrow('MINERU_OFFLINE_REQUIRED');expect(requests).toHaveLength(0);
@@ -40,6 +65,46 @@ it('preserves uncertain submissions instead of resubmitting after a lost respons
   await expect(startConversion(service,source.id,client)).rejects.toThrow('CONVERSION_SUBMISSION_UNKNOWN');
   expect(listConversions(service)).toMatchObject([{status:'reconciling'}]);
   await startConversion(service,source.id,client);expect(requests).toHaveLength(1);
+});
+it.each([0,1,2])('reconciles only a unique owned submission (%i matches) without submitting again',async(count)=>{
+  const {service,source,client,requests,setFailSubmit}=await setup();setFailSubmit();
+  await expect(startConversion(service,source.id,client)).rejects.toThrow('CONVERSION_SUBMISSION_UNKNOWN');
+  const job=listConversions(service)[0],request=requests[0];
+  client.submissions=async()=>Array.from({length:count},(_,i)=>({id:'found-'+i,source:request.files[0],outputRoot:request.outputRoot,options:request.options}));
+  const result=await reconcileConversion(service,job.id,client);
+  expect(result.status).toBe(count===1?'sample_running':'reconciling');
+  if(count===1)expect(result.taskId).toBe('found-0');
+  expect(requests).toHaveLength(1);
+});
+it('does not reconcile another output root or different parsing options',async()=>{
+  const {service,source,client,requests,setFailSubmit}=await setup();setFailSubmit();
+  await expect(startConversion(service,source.id,client)).rejects.toThrow('CONVERSION_SUBMISSION_UNKNOWN');
+  const job=listConversions(service)[0],request=requests[0];
+  client.submissions=async()=>[
+    {id:'wrong-root',source:request.files[0],outputRoot:request.outputRoot+'-other',options:request.options},
+    {id:'wrong-options',source:request.files[0],outputRoot:request.outputRoot,options:{...request.options,pages:''}},
+  ];
+  expect((await reconcileConversion(service,job.id,client)).status).toBe('reconciling');expect(requests).toHaveLength(1);
+});
+it('recovers a lost full submission without mistaking the sample for full text',async()=>{
+  const {service,source,client,requests,setFailSubmit}=await setup();
+  const job=await startConversion(service,source.id,client);await pollConversion(service,job.id,client);setFailSubmit();
+  await expect(approveSample(service,job.id,client)).rejects.toThrow('CONVERSION_SUBMISSION_UNKNOWN');
+  const request=requests[1];client.submissions=async()=>[{id:'full-existing',source:request.files[0],outputRoot:request.outputRoot,options:{...request.options,pages:''}}];
+  expect(await reconcileConversion(service,job.id,client)).toMatchObject({status:'full_running',taskId:'full-existing',sampleTaskId:'desk-1'});
+  expect(requests).toHaveLength(2);
+});
+it('never replaces an already registered task ID during reconciliation',async()=>{
+  const {service,source,client,requests}=await setup();const job=await startConversion(service,source.id,client);
+  service.db.prepare("UPDATE conversions SET status='reconciling' WHERE id=?").run(job.id);
+  const request=requests[0];client.submissions=async()=>[{id:'different-id',source:request.files[0],outputRoot:request.outputRoot,options:request.options}];
+  expect(await reconcileConversion(service,job.id,client)).toMatchObject({status:'reconciling',taskId:'desk-1'});
+});
+it('does not silently certify a legacy full cache with no file inventory',async()=>{
+  const {service,source,client}=await setup();const job=await startConversion(service,source.id,client);
+  await pollConversion(service,job.id,client);await approveSample(service,job.id,client);await pollConversion(service,job.id,client);
+  service.db.prepare('DELETE FROM conversion_files WHERE conversionId=?').run(job.id);
+  expect(()=>readConversion(service,job.id)).toThrow('CACHE_VERIFICATION_REQUIRED');
 });
 it('does not accept a result belonging to another source or task',async()=>{
   const {service,source,client}=await setup();const job=await startConversion(service,source.id,client);

@@ -98,7 +98,9 @@ test('reads only an integrity-checked parsed cache associated with the source',a
   const paper='# 合成解析样例\n\n## PDF 第 1 页\n\n只用于界面测试。';const map=JSON.stringify({pdf_sha256:source.sha256,pages:[{pdf_page:1}]});
   const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
   await writeFile(join(cache,'paper.md'),paper);await writeFile(join(cache,'source_map.json'),map);
-  service.db.prepare('INSERT INTO conversions(id,sourceId,status,paperHash,mapHash,createdAt) VALUES(?,?,?,?,?,?)').run(id,source.id,'completed',hash(paper),hash(map),new Date().toISOString());service.close();
+  service.db.prepare('INSERT INTO conversions(id,sourceId,status,paperHash,mapHash,createdAt) VALUES(?,?,?,?,?,?)').run(id,source.id,'completed',hash(paper),hash(map),new Date().toISOString());
+  for(const [path,value] of [['paper.md',paper],['source_map.json',map]])service.db.prepare('INSERT INTO conversion_files VALUES(?,?,?)').run(id,path,hash(value));
+  service.close();
   const app=await electron.launch({args:[resolve('dist/main.cjs')],env:{...process.env,CYZ_PROJECT_ROOT:root}});
   try{
     const page=await app.firstWindow();await page.getByRole('button',{name:'查看解析结果'}).click();
@@ -106,4 +108,29 @@ test('reads only an integrity-checked parsed cache associated with the source',a
     await expect(page.getByText('全文解析 · 1 页')).toBeVisible();
     await page.screenshot({path:'.tmp/desktop-reading.png'});
   }finally{await app.close()}
+});
+
+test('keeps the project alive until a pending local operation has settled',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'cyz 退出保护 '));const service=await ProjectService.create(root);service.close();
+  const app=await electron.launch({args:[resolve('dist/main.cjs')],env:{...process.env,CYZ_PROJECT_ROOT:root}});
+  try{
+    const page=await app.firstWindow();
+    await app.evaluate(({dialog})=>{
+      dialog.showOpenDialog=(()=>new Promise(resolve=>{(globalThis as any).finishImport=()=>resolve({canceled:true,filePaths:[]})})) as typeof dialog.showOpenDialog;
+      dialog.showMessageBox=(async()=>({response:0,checkboxChecked:false})) as typeof dialog.showMessageBox;
+    });
+    await page.getByRole('button',{name:'＋ 导入材料'}).click();
+    await expect.poll(()=>app.evaluate(()=>typeof (globalThis as any).finishImport)).toBe('function');
+    const result=await app.evaluate(({app})=>{let prevented=false;app.once('before-quit',event=>{prevented=event.defaultPrevented});app.quit();return prevented});
+    expect(result).toBe(true);
+    await app.evaluate(()=>{(globalThis as any).finishImport()});
+    await expect(page.getByRole('status')).toContainText('已处理 0 份材料');
+  }finally{if(app.process().exitCode===null){await app.evaluate(()=>{(globalThis as any).finishImport?.()});await app.close()}}
+});
+test('offers read-only reconciliation for an uncertain PDF submission',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'cyz 解析核实界面 '));const service=await ProjectService.create(root);
+  const file=join(root,'未知提交.pdf');await writeFile(file,'%PDF synthetic');const source=await service.importSource(file);
+  service.db.prepare('INSERT INTO conversions(id,sourceId,status,createdAt) VALUES(?,?,?,?)').run(randomUUID(),source.id,'reconciling',new Date().toISOString());service.close();
+  const app=await electron.launch({args:[resolve('dist/main.cjs')],env:{...process.env,CYZ_PROJECT_ROOT:root}});
+  try{const page=await app.firstWindow();await expect(page.getByRole('button',{name:'核实解析状态'})).toBeVisible();await expect(page.getByRole('button',{name:'本地解析',exact:true})).toHaveCount(0)}finally{await app.close()}
 });
