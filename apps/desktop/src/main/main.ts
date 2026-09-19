@@ -6,6 +6,7 @@ import {promisify} from 'node:util';
 import {ProjectService} from '../../../../packages/project-service/src/project.ts';
 import {prepareTask} from '../../../../packages/project-service/src/tasks.ts';
 import {listCandidates,publishCandidate} from '../../../../packages/project-service/src/candidates.ts';
+import {reconcileTask} from '../../../../packages/project-service/src/recovery.ts';
 import {projectPath} from '../../../../packages/project-service/src/path-policy.ts';
 import {CodexEngine} from '../../../../packages/codex-adapter/src/engine.ts';
 import type {ResearchEvent} from '../../../../packages/codex-adapter/src/normalize.ts';
@@ -77,6 +78,12 @@ async function setup(){
     }catch(error){active=false;throw error;}
   });
   handler('task.stop',async(id:unknown)=>{current(id);if(!engine||!active)throw new Error('没有正在运行的任务');await engine.stop();});
+  handler('task.reconcile',async(id:unknown,target:unknown)=>{
+    const service=current(id);if(active)throw new Error('请等待当前操作结束');
+    const ownedTask=text(target,100);active=true;const inspector=new CodexEngine(()=>{});
+    try{return await reconcileTask(service,ownedTask,thread=>inspector.inspect(thread))}
+    finally{inspector.close();active=false}
+  });
   handler('decision.answer',(id:unknown,request:unknown,revision:unknown,answer:unknown)=>{current(id);if(!engine||typeof revision!=='number')throw new Error('DECISION_EXPIRED');engine.answer(text(request),revision,answer);});
 
   window=new BrowserWindow({width:1480,height:940,minWidth:980,minHeight:680,backgroundColor:'#f5f6f3',show:false,webPreferences:{preload:join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true}});

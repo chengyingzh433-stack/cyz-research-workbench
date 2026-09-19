@@ -55,3 +55,18 @@ test('reviews a run candidate before publishing it into the project',async()=>{
     expect(await readFile(join(root,'07-论文草稿/工作台草稿.md'),'utf8')).toBe('待审核候选稿');
   }finally{await app.close()}
 });
+
+test('shows an unresolved task without silently starting another model turn',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'cyz 恢复界面 '));const service=await ProjectService.create(root);
+  await prepareTask(service,'S0','没有会话记录的中断测试');service.close();
+  const app=await electron.launch({args:[resolve('dist/main.cjs')],env:{...process.env,CYZ_PROJECT_ROOT:root}});
+  try{
+    const page=await app.firstWindow();
+    await expect(page.getByRole('button',{name:'核实任务状态'})).toBeVisible();
+    await page.getByRole('button',{name:'核实任务状态'}).click();
+    await expect(page.getByRole('status')).toContainText('没有记录到会话编号');
+    await page.getByLabel('研究指令').fill('不应自动发起');
+    await expect(page.getByRole('button',{name:'开始研究 ↑'})).toBeDisabled();
+  }finally{await app.close()}
+  const reopened=await ProjectService.open(root);try{expect(reopened.snapshot().tasks).toHaveLength(1)}finally{reopened.close()}
+});

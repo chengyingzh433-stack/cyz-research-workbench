@@ -8,6 +8,7 @@ import { basename, dirname, join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { projectPath } from './path-policy.ts';
 import { openDatabase } from './database.ts';
+import {acquireProjectLock} from './project-lock.ts';
 
 export const stageNames = ['领域扫描与灵感发现','实践问题与研究问题','文献检索设计','文献筛选与分级阅读','文献综合与研究缺口','研究设计','数据收集与分析','论文写作','全文审查与正式输出'];
 type Metadata = { schemaVersion: 1; projectId: string; workflowVersion: string; createdAt: string };
@@ -23,15 +24,18 @@ export class ProjectService {
   readonly metadata: Metadata;
   readonly db: Database.Database;
   private closed = false;
+  private releaseLock:()=>void;
 
   private constructor(root: string, metadata: Metadata) {
     this.root = realpathSync(root);
     this.metadata = metadata;
     if (active.has(metadata.projectId)) throw new Error('PROJECT_ALREADY_OPEN');
     projectPath(this.root, '.cyz/state.sqlite', true);
-    this.db = openDatabase(join(this.root, '.cyz/state.sqlite'));
-    active.add(metadata.projectId);
-    this.recoverPublications();
+    this.releaseLock=acquireProjectLock(this.root,metadata.projectId);
+    try{this.db = openDatabase(join(this.root, '.cyz/state.sqlite'));}
+    catch(error){this.releaseLock();throw error}
+    try{this.recoverPublications();active.add(metadata.projectId);}
+    catch(error){this.db.close();this.releaseLock();throw error}
   }
 
   static async create(root: string) {
@@ -177,7 +181,6 @@ export class ProjectService {
   close() {
     if (this.closed) return;
     this.closed = true;
-    this.db.close();
-    active.delete(this.metadata.projectId);
+    try{this.db.close()}finally{this.releaseLock();active.delete(this.metadata.projectId)}
   }
 }

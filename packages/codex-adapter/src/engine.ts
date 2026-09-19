@@ -8,6 +8,8 @@ import type { InitializeParams } from '../generated/InitializeParams.ts';
 import type { ThreadStartParams } from '../generated/v2/ThreadStartParams.ts';
 import type { TurnStartParams } from '../generated/v2/TurnStartParams.ts';
 import type { ThreadResumeParams } from '../generated/v2/ThreadResumeParams.ts';
+import type {ThreadReadResponse} from '../generated/v2/ThreadReadResponse.ts';
+import type {RuntimeInspection} from '../../project-service/src/recovery.ts';
 
 export function findCodex() {
   const explicit = process.env.CYZ_CODEX_EXE;
@@ -93,6 +95,13 @@ export class CodexEngine {
       this.onEvent({type:'recovery.required',payload:{reason:error instanceof Error ? error.message : 'CODEX_START_UNKNOWN'}});
       throw error;
     }
+  }
+
+  async inspect(threadId:string):Promise<RuntimeInspection>{
+    await this.connect();
+    const result=await this.rpc!.request('thread/read',{threadId,includeTurns:true}) as ThreadReadResponse;
+    if(result.thread?.id!==threadId||!Array.isArray(result.thread.turns)||typeof result.thread.cwd!=='string')throw new Error('INVALID_THREAD_READ');
+    return {threadId:result.thread.id,cwd:result.thread.cwd,turns:result.thread.turns.map(turn=>({id:turn.id,status:turn.status,messages:turn.items.flatMap(item=>item.type==='agentMessage'?[{id:item.id,text:item.text}]:[])}))};
   }
 
   async stop() {

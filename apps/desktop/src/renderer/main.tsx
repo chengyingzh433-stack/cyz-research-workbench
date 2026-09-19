@@ -15,6 +15,7 @@ function App(){
   const projectId=snapshot?.project.id;
   const [selectedVersion,setSelectedVersion]=useState<{id:string;text:string}|null>(null);
   const [candidateTask,setCandidateTask]=useState(''),[candidates,setCandidates]=useState<{relpath:string;text:string;sha256:string}[]>([]),[publishing,setPublishing]=useState(false);
+  const [checking,setChecking]=useState(false);
   const busy=['queued','running','stopping','waiting_user'].includes(taskStatus);
   const safe=async(fn:()=>Promise<void>)=>{try{await fn()}catch(e){setNotice(e instanceof Error?e.message:'操作未完成')}};
   async function refresh(){const value=await call<Snapshot|null>(api.projects.snapshot());setSnapshot(value);return value}
@@ -41,6 +42,15 @@ function App(){
   async function start(){if(!projectId||!prompt.trim())return;if(dirty){setNotice('请先保存草稿，再开始研究。研究任务只读取已保存的成果。');return}const text=prompt;setTaskStatus('queued');try{await call(api.tasks.start(projectId,'S'+stage,text));setMessages(old=>[...old,{id:crypto.randomUUID(),role:'user',text}]);setPrompt('')}catch(error){setTaskStatus('failed');throw error}}
   async function save(){const result=await call(api.artifacts.save(projectId,draftPath,draft,base));if(result.status==='conflict'){setNotice('保存遇到版本冲突。你的候选稿和原稿均已保留，请核对版本记录。');return}setBase(result.versionId);setDirty(false);setNotice('已保存新版本');await refresh()}
   async function respond(value:unknown){await call(api.decisions.answer(projectId,decision.id,decision.revision,value));setAnswer('')}
+  async function reconcile(){
+    setChecking(true);
+    const reasons:Record<string,string>={SESSION_NOT_RECORDED:'没有记录到会话编号，不能确认是否执行。',TURN_NOT_RECORDED:'没有记录到本轮编号，暂不能确认结果。',RUNTIME_READ_FAILED:'暂时无法读取运行记录，请稍后重试。',RUNTIME_IDENTITY_MISMATCH:'运行记录与本项目不一致，已保留原状态。',TURN_NOT_FOUND:'未找到原来的执行轮次，暂不能确认结果。',TURN_NOT_TERMINAL:'运行时尚未确认结束，未重新执行任务。'};
+    try{
+      const latest=await refresh();let unresolved='';
+      for(const task of latest?.tasks.filter(t=>t.status==='reconciling')??[]){const result=await call(api.tasks.reconcile(projectId,task.id));if(result.status==='reconciling')unresolved=reasons[result.reason]??'仍无法确认原任务状态。'}
+      hydrate(await refresh());setNotice(unresolved||'任务状态已核实，已恢复确认完成的回复。');
+    }finally{setChecking(false)}
+  }
   const statusText:Record<string,string>={idle:'尚未发起研究任务',queued:'准备研究任务',running:'研究进行中',waiting_user:'等待你的回答',stopping:'正在停止，等待确认',interrupted:'任务已停止',completed:'任务执行完成',failed:'任务失败',reconciling:'运行状态待核实'};
   return <><header className="app-header"><div className="brand-mark">c</div><div><strong>CYZ 研究工作台</strong><small>让研究过程与证据留在一起</small></div><div className="header-project">{snapshot?.project.name??'尚未打开项目'}</div><button onClick={()=>void safe(choose)}>打开或新建项目</button><button onClick={()=>setChatOpen(!chatOpen)}>{chatOpen?'收起对话':'展开对话'}</button></header>
   <div className={'shell '+(!chatOpen?'chat-hidden':'')}><aside className="nav"><p className="label">研究阶段</p>{stageLabels.map((name,i)=><button aria-label={'S'+i+' '+name} className={stage===i?'stage active':'stage'} key={name} onClick={()=>setStage(i)}><span>S{i}</span><span>{name}</span></button>)}<div className="rule"/><p className="label">项目资源</p><button className="stage" onClick={()=>void safe(()=>selectView('materials'))}>文献与材料</button><button className="stage" onClick={()=>void safe(()=>selectView('history'))}>版本记录</button><p className="nav-note">切换阶段只切换浏览位置。<br/>研究任务由你发起。</p></aside>
@@ -53,6 +63,7 @@ function App(){
   {view==='history'&&<><div className="toolbar"><strong>工作台草稿历史</strong></div>{history.length?history.map(v=><article className="material" key={v.id}><div><h3>{v.state==='conflict'?'待处理的冲突候选':'已保存版本'}</h3><p>{new Date(v.createdAt).toLocaleString()} · {v.hash.slice(0,12)}</p></div><button onClick={()=>void safe(async()=>setSelectedVersion({id:v.id,text:await call(api.artifacts.version(projectId,v.id))}))}>查看此版本</button></article>):<div className="empty">尚无草稿版本。</div>}{selectedVersion&&<section><div className="toolbar"><strong>历史内容预览</strong><button onClick={()=>void safe(restoreVersion)}>将此版本载入草稿</button></div><textarea className="draft-editor" aria-label="历史版本内容" readOnly value={selectedVersion.text}/><p className="muted">载入后需要手动保存，恢复会新增版本，不会删除后续版本。</p></section>}</>}
   <p className="project-path" title={snapshot.project.root}>{snapshot.project.root}</p></>}
   {!snapshot&&<div className="empty"><h2>一个文件夹，一项研究</h2><p>材料、进度与成果保存在本机。打开项目不会自动调用模型。</p><button className="primary" onClick={()=>void safe(choose)}>选择项目文件夹</button></div>}
+  {taskStatus==='reconciling'&&<section className="decision"><strong>上次任务的结果尚待核实</strong><p>先读取原会话记录，不会重复发送研究指令。核实完成前保留已有草稿和材料。</p><button disabled={checking} onClick={()=>void safe(reconcile)}>{checking?'正在核实…':'核实任务状态'}</button></section>}
   <div role="status" className={'notice '+(notice?'shown':'')}>{notice}</div></main>
   {chatOpen&&<section className="chat"><div className="chat-header"><strong>研究对话</strong><span className={'badge '+(busy?'amber':'')}>{statusText[taskStatus]}</span></div><div className="messages">{messages.length?messages.map(m=><div key={m.id} className={'message '+m.role}><small>{m.role==='user'?'你':'Codex'}</small><div>{m.text}</div></div>):<div className="chat-welcome"><h2>从你现在的情况开始</h2><p>可以说一个教学困惑，或请 Codex 检查已有的研究问题。</p><button onClick={()=>setPrompt('我还没有选题，请先了解我的学科和资料条件，每次只问一个关键问题。')}>我还没有选题</button><button onClick={()=>setPrompt('请读取本项目的状态，盘点已有成果与缺少的证据，告诉我下一步。')}>继续已有研究</button></div>}
   {decision&&<div className="decision"><span className="badge amber">{decision.kind==='research'?'需要你的研究决定':'操作审批'}</span>{decision.kind==='research'?<>{(decision.questions??[]).map((q:any)=><p key={q.id}>{q.question}</p>)}<textarea aria-label="决定回答" value={answer} onChange={e=>setAnswer(e.target.value)}/><button onClick={()=>void safe(()=>respond({answers:Object.fromEntries((decision.questions??[]).map((q:any)=>[q.id,{answers:[answer]}]))}))}>提交回答</button></>:<><p>{decision.reason??'Codex 请求执行一项需要批准的操作。'}</p><button onClick={()=>void safe(()=>respond('decline'))}>拒绝</button><button onClick={()=>void safe(()=>respond('accept'))}>允许本次</button></>}</div>}</div>
