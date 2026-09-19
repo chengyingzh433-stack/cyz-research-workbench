@@ -6,3 +6,14 @@ coverage/
 *.log
 test-results/
 playwright-report/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+__pycache__/
+*.pyc
+.cyz/

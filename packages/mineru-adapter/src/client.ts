@@ -3,6 +3,7 @@ import {promisify} from 'node:util';
 import {existsSync,readFileSync} from 'node:fs';
 import {join,dirname,resolve} from 'node:path';
 import type {ConversionClient} from '../../project-service/src/conversions.ts';
+import {codexHome} from '../../workflow-adapter/src/skill-binding.ts';
 const execute=promisify(execFile);
 export function isOwnedTaskFailure(stdout:string,code:unknown,taskId:string|undefined):boolean{
   if(code!==2||!taskId)return false;try{const payload=JSON.parse(stdout);return payload.id===taskId&&payload.status==='failed'}catch{return false}
@@ -26,7 +27,7 @@ export async function findDesk(){
 export class DeskClient implements ConversionClient{
   readonly root:string;readonly skill:string;readonly python:string;
   private checked?:Promise<void>;
-  constructor(root:string,skill=join(process.env.USERPROFILE??'','.codex','skills','cyz-edu-research')){
+  constructor(root:string,skill=join(codexHome(),'skills','cyz-edu-research')){
     this.root=resolve(root);this.skill=resolve(skill);this.python=join(this.root,'runtime','python.exe');
     for(const path of [join(this.root,'Codex.ps1'),this.python,join(this.skill,'scripts','export_mineru_task.py'),join(this.skill,'scripts','convert_pdf_to_md.py')])if(!existsSync(path))throw new Error('MINERU_DEPENDENCY_MISSING');
     const bundle=JSON.parse(readFileSync(join(this.root,'mineru-desk-bundle.json'),'utf8'));

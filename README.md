@@ -1,6 +1,8 @@
 # CYZ 研究工作台
 
-这是正在开发的 Windows 桌面工作台，配合 CYZ 教育研究工作流 0.3.0 使用。按当前要求仅供本地使用，不上传或发布工作台。当前是开发版本，还没有安装包。
+这是正在开发的 Windows 桌面工作台，配合 [CYZ 教育研究工作流 0.3.0](https://github.com/chengyingzh433-stack/cyz-edu-research/releases/tag/0.3.0) 使用。工作台在本机运行，源码保存在独立私有仓库；研究项目、论文和缓存不随源码上传。当前是开发版本，还没有安装包。
+
+工作流 Skill 是研究规则的来源，工作台负责界面、材料、版本与任务。每次开始研究，工作台检查 Codex 是否识别并启用 `cyz-edu-research`，再显式传入该 Skill。缺失、被禁用或版本不符会报错，不静默退回普通聊天。
 
 ## 已经能做什么
 
@@ -18,12 +20,13 @@
 开发验证环境是 Windows、Node 24.16.0、pnpm 11.19.0 和 Codex CLI 0.153.4。安装依赖需要联网；首次安装 SQLite 原生依赖可能需要 C++ 构建工具。
 
 ```powershell
-pnpm install
-pnpm build
+./setup.ps1
 pnpm start
 ```
 
-首次打开后，点击“打开或新建项目”。新建项目建议选择一个空文件夹。如果本机已经安装 `cyz-edu-research` Skill，会调用其初始化脚本；这需要 Python 3.11 和 Windows `py` 启动器。
+`setup.ps1` 会校验并安装固定的工作流 0.3.0，再安装工作台依赖并构建。需要 Node、pnpm、Python 3.11（Windows `py` 启动器），以及已安装并登录的 Codex。Skill 默认进入 `CODEX_HOME/skills`；没有设置 CODEX_HOME 时进入当前用户的 `.codex/skills`。已有 Skill 与发布包一致则复用，有差异则停止并保留原文件。不会为安装启动模型任务。
+
+首次打开后，点击“打开或新建项目”。新建项目建议选择一个空文件夹。工作台调用配套 Skill 的初始化脚本，不另造项目模板。交给 Codex 帮你部署时，见 [Codex 部署入口](docs/codex-deploy.md)。
 
 先在“草稿编辑”中保存内容，再发起研究。任务读取项目根目录 Markdown、已登记的成果版本，以及通过完整性校验的全文解析文字。尚未解析的材料只提供目录信息；图片和 PDF 原件不会自动传入研究任务。不要把“已导入材料”理解成模型已经读过全部论文或看过图表。
 

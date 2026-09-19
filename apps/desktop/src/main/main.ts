@@ -1,5 +1,6 @@
 import {app,BrowserWindow,ipcMain,dialog,shell,Tray,Menu,nativeImage} from 'electron';
-import {join,resolve} from 'node:path';
+import {join,resolve,dirname} from 'node:path';
+import {workflowSkillPath} from '../../../../packages/workflow-adapter/src/skill-binding.ts';
 import {existsSync,readFileSync} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -45,7 +46,7 @@ async function openProject(root:string){
   if(project?.root===resolve(root))return {...project.snapshot(),events:project.eventsAfter(0)};
   let next:ProjectService;
   if(!existsSync(join(root,'.cyz/project.json'))){
-    const skill=join(process.env.USERPROFILE??'','.codex/skills/cyz-edu-research');
+    const skill=dirname(workflowSkillPath());
     if(existsSync(join(skill,'scripts/init_project.py'))&&!existsSync(join(root,'00-项目状态.md'))){
       await promisify(execFile)('py',['-3.11',join(skill,'scripts/init_project.py'),root,'--entry-mode','discovery','--allow-existing'],{windowsHide:true,encoding:'utf8'});
     }
@@ -88,7 +89,7 @@ async function setup(){
   handler('candidate.publish',(id:unknown,task:unknown,path:unknown,hash:unknown)=>publishCandidate(current(id),text(task,100),text(path,220),text(hash,64)));
   handler('task.start',async(id:unknown,stage:unknown,prompt:unknown)=>{
     const service=current(id);if(active||pendingOperations)throw new Error('请等待当前操作结束');if(typeof stage!=='string'||!/^S[0-8]$/.test(stage))throw new Error('INVALID_STAGE');const message=text(prompt,30000);
-    active=true;
+    workflowSkillPath();active=true;
     try{
       const prepared=await prepareTask(service,stage,message);taskId=prepared.taskId;
       engine?.close();engine=new CodexEngine(event=>{if(project===service&&taskId===prepared.taskId)runtimeEvent(event)});
