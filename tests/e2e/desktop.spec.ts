@@ -11,6 +11,8 @@ test('creates a Chinese-path project and saves a draft across reopening', async 
   const app = await electron.launch({args:[resolve('dist/main.cjs')],env:{...process.env,CYZ_PROJECT_ROOT:root},timeout:30000});
   const page = await app.firstWindow();
   await expect(page.getByRole('heading',{name:'研究项目'})).toBeVisible();
+  const logo=page.getByRole('img',{name:'CYZ 书本图标'});await expect(logo).toBeVisible();
+  expect(await logo.evaluate((image:HTMLImageElement)=>image.complete&&image.naturalWidth>0)).toBe(true);
   await expect(page.getByRole('button',{name:'S8 全文审查与正式输出'})).toBeVisible();
   await page.getByRole('button',{name:'草稿编辑',exact:true}).click();
   await page.getByLabel('草稿内容').fill('# 我的研究\n\n保留人工修改。');

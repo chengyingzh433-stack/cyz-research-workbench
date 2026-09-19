@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <title>CYZ 研究工作台 · 翻开的书</title>
+  <rect x="8" y="8" width="240" height="240" rx="58" fill="#2E5B48"/>
+  <path d="M43 89C73 80 101 91 128 105C154 90 185 79 214 88V183C184 175 157 183 128 197C99 183 72 175 43 183V89Z" fill="#173F32"/>
+  <path d="M44 81C76 76 103 86 128 103C153 86 181 76 212 81V175C181 172 153 180 128 193C103 180 75 172 44 175V81Z" fill="#C9D4B8"/>
+  <path d="M49 71C79 68 106 81 128 98V185C103 169 77 161 49 164V71Z" fill="#F5EEDB"/>
+  <path d="M207 66C177 65 151 78 128 98V185C152 166 179 155 207 157V66Z" fill="#FFF9EA"/>
+  <path d="M128 100V184" stroke="#B5C5A8" stroke-width="5" stroke-linecap="round"/>
+  <path d="M161 57C180 51 190 49 203 52L207 66C177 65 151 78 133 94C140 77 148 65 161 57Z" fill="#E3E8CE"/>
+  <path d="M178 72C184 70 190 69 196 69V120L187 113L178 125V72Z" fill="#CFAB62"/>
+  <path d="M66 101C80 102 94 107 108 115M66 121C80 122 94 127 108 135" stroke="#C5C8AE" stroke-width="5" stroke-linecap="round"/>
+  <path d="M146 145C160 136 174 132 190 132" stroke="#D4D8BE" stroke-width="5" stroke-linecap="round"/>
+</svg>

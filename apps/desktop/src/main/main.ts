@@ -105,13 +105,13 @@ async function setup(){
   });
   handler('decision.answer',(id:unknown,request:unknown,revision:unknown,answer:unknown)=>{current(id);if(!engine||typeof revision!=='number')throw new Error('DECISION_EXPIRED');engine.answer(text(request),revision,answer);});
 
-  window=new BrowserWindow({width:1480,height:940,minWidth:980,minHeight:680,backgroundColor:'#f5f6f3',show:false,webPreferences:{preload:join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true}});
+  window=new BrowserWindow({width:1480,height:940,minWidth:980,minHeight:680,icon:join(__dirname,'renderer/icons/book.ico'),backgroundColor:'#f5f6f3',show:false,webPreferences:{preload:join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true}});
   window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   window.webContents.on('will-navigate',event=>event.preventDefault());
   window.on('close',event=>{if((active||pendingOperations)&&!quitting){event.preventDefault();window.hide();}});
   await window.loadFile(join(__dirname,'renderer/index.html'));
   window.show();
-  tray=new Tray(nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='));
+  tray=new Tray(nativeImage.createFromPath(join(__dirname,'renderer/icons/book.ico')));
   tray.setToolTip('CYZ 研究工作台');tray.on('click',()=>window.show());
   tray.setContextMenu(Menu.buildFromTemplate([{label:'显示工作台',click:()=>window.show()},{label:'退出',click:async()=>{if(active){const choice=await dialog.showMessageBox(window,{type:'question',message:'研究任务仍在运行',buttons:['后台继续','停止任务'],defaultId:0,cancelId:0});if(choice.response===1){await engine?.stop();window.show();}return;}quitting=true;app.quit();}}]));
 }
