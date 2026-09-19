@@ -104,7 +104,7 @@ export class ProjectService {
     } finally { await rm(temporary, { force: true }); }
   }
 
-  async saveArtifact(relpath: string, content: string, baseVersionId: string | null) {
+  async saveArtifact(relpath: string, content: string, baseVersionId: string | null, expectedFileHash?:string|null) {
     const destination = projectPath(this.root, relpath);
     const bytes = Buffer.from(content);
     if (bytes.length > 10 * 1024 * 1024) throw new Error('ARTIFACT_TOO_LARGE');
@@ -119,7 +119,8 @@ export class ProjectService {
     }
     const current = artifact.currentVersionId ? this.db.prepare('SELECT * FROM versions WHERE id=?').get(artifact.currentVersionId) as Version : undefined;
     const versionId = randomUUID();
-    const conflict = baseVersionId !== artifact.currentVersionId || fileHash(destination) !== (current?.hash ?? null);
+    const actualHash=fileHash(destination);
+    const conflict = baseVersionId !== artifact.currentVersionId || actualHash !== (current?.hash ?? null) || (expectedFileHash!==undefined&&actualHash!==expectedFileHash);
     this.db.prepare('INSERT INTO versions(id,artifactId,hash,baseVersionId,state,createdAt) VALUES(?,?,?,?,?,?)').run(versionId, artifact.id, contentHash, baseVersionId, conflict ? 'conflict' : 'candidate', new Date().toISOString());
     if (conflict) {
       this.emit('artifact.conflict', { artifactId: artifact.id, versionId });

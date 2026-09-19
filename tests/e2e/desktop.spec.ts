@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {ProjectService} from '../../packages/project-service/src/project.ts';
 import {prepareTask} from '../../packages/project-service/src/tasks.ts';
+import {emptyMatrix} from '../../packages/workflow-adapter/src/matrix.ts';
 test('creates a Chinese-path project and saves a draft across reopening', async () => {
   const root = await mkdtemp(join(tmpdir(), 'cyz 界面测试 '));
   const app = await electron.launch({args:[resolve('dist/main.cjs')],env:{...process.env,CYZ_PROJECT_ROOT:root},timeout:30000});
@@ -69,4 +70,22 @@ test('shows an unresolved task without silently starting another model turn',asy
     await expect(page.getByRole('button',{name:'开始研究 ↑'})).toBeDisabled();
   }finally{await app.close()}
   const reopened=await ProjectService.open(root);try{expect(reopened.snapshot().tasks).toHaveLength(1)}finally{reopened.close()}
+});
+
+test('edits the existing evidence matrix without dropping surrounding notes',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'cyz 矩阵界面 '));const service=await ProjectService.create(root);service.close();
+  await writeFile(join(root,'03-文献证据矩阵.md'),emptyMatrix+'\n## 人工备注\n必须保留这段。\n');
+  const app=await electron.launch({args:[resolve('dist/main.cjs')],env:{...process.env,CYZ_PROJECT_ROOT:root}});
+  try{
+    const page=await app.firstWindow();await page.getByRole('button',{name:'证据矩阵',exact:true}).click();
+    await page.getByRole('button',{name:'添加文献条目'}).click();
+    await page.getByLabel('文献 ID',{exact:true}).fill('P-001');await page.getByLabel('主要发现',{exact:true}).fill('合成测试条目，未经学术核查');
+    await page.getByRole('button',{name:'保存证据矩阵'}).click();
+    await expect(page.getByRole('status')).toContainText('证据矩阵已保存');
+    await expect(page.locator('.summary > div').nth(1).getByText('1',{exact:true})).toBeVisible();
+    const content=await readFile(join(root,'03-文献证据矩阵.md'),'utf8');expect(content).toContain('P-001');expect(content).toContain('必须保留这段。');
+    await page.getByRole('button',{name:'文献材料',exact:true}).click();await page.getByRole('button',{name:'证据矩阵',exact:true}).click();
+    await expect(page.getByRole('cell',{name:'P-001',exact:true})).toBeVisible();
+    await page.screenshot({path:'.tmp/desktop-matrix.png'});
+  }finally{await app.close()}
 });

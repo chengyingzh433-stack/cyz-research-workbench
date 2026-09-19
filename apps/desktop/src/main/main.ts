@@ -7,6 +7,7 @@ import {ProjectService} from '../../../../packages/project-service/src/project.t
 import {prepareTask} from '../../../../packages/project-service/src/tasks.ts';
 import {listCandidates,publishCandidate} from '../../../../packages/project-service/src/candidates.ts';
 import {reconcileTask} from '../../../../packages/project-service/src/recovery.ts';
+import {readDocument,saveDocument} from '../../../../packages/project-service/src/documents.ts';
 import {projectPath} from '../../../../packages/project-service/src/path-policy.ts';
 import {CodexEngine} from '../../../../packages/codex-adapter/src/engine.ts';
 import type {ResearchEvent} from '../../../../packages/codex-adapter/src/normalize.ts';
@@ -65,6 +66,11 @@ async function setup(){
   handler('artifact.save',(id:unknown,path:unknown,content:unknown,base:unknown)=>{if(typeof content!=='string'||content.length>5_000_000||(base!==null&&typeof base!=='string'))throw new Error('INVALID_INPUT');return current(id).saveArtifact(text(path,220),content,base);});
   handler('artifact.history',(id:unknown,path:unknown)=>current(id).history(text(path,220)));
   handler('artifact.version',(id:unknown,version:unknown)=>current(id).readVersion(text(version,100)));
+  handler('matrix.read',(id:unknown)=>readDocument(current(id),'03-文献证据矩阵.md'));
+  handler('matrix.save',(id:unknown,content:unknown,base:unknown,hash:unknown)=>{
+    if(typeof content!=='string'||content.length>5_000_000||(base!==null&&typeof base!=='string')||(hash!==null&&(typeof hash!=='string'||!/^\w{64}$/.test(hash))))throw new Error('INVALID_INPUT');
+    return saveDocument(current(id),'03-文献证据矩阵.md',content,base,hash);
+  });
   handler('candidate.list',(id:unknown,task:unknown)=>listCandidates(current(id),text(task,100)));
   handler('candidate.publish',(id:unknown,task:unknown,path:unknown,hash:unknown)=>publishCandidate(current(id),text(task,100),text(path,220),text(hash,64)));
   handler('task.start',async(id:unknown,stage:unknown,prompt:unknown)=>{
