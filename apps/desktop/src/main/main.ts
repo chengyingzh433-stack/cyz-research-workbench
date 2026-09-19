@@ -8,6 +8,8 @@ import {prepareTask} from '../../../../packages/project-service/src/tasks.ts';
 import {listCandidates,publishCandidate} from '../../../../packages/project-service/src/candidates.ts';
 import {reconcileTask} from '../../../../packages/project-service/src/recovery.ts';
 import {readDocument,saveDocument} from '../../../../packages/project-service/src/documents.ts';
+import {startConversion,pollConversion,approveSample,readConversion,listConversions} from '../../../../packages/project-service/src/conversions.ts';
+import {DeskClient,findDesk} from '../../../../packages/mineru-adapter/src/client.ts';
 import {projectPath} from '../../../../packages/project-service/src/path-policy.ts';
 import {CodexEngine} from '../../../../packages/codex-adapter/src/engine.ts';
 import type {ResearchEvent} from '../../../../packages/codex-adapter/src/normalize.ts';
@@ -17,6 +19,10 @@ let project:ProjectService|undefined;
 let engine:CodexEngine|undefined;
 let taskId:string|undefined;
 let active=false;
+let pendingOperations=0;
+let deskClient:Promise<DeskClient>|undefined;
+function desk(){return deskClient??=(findDesk().then(root=>new DeskClient(root)).catch(error=>{deskClient=undefined;throw error}))}
+async function parsingOperation<T>(operation:()=>Promise<T>){pendingOperations++;try{return await operation()}finally{pendingOperations--}}
 let quitting=false;
 let tray:Tray|undefined;
 const text=(value:unknown,max=10000)=>{if(typeof value!=='string'||!value.trim()||value.length>max)throw new Error('INVALID_INPUT');return value};
@@ -35,7 +41,7 @@ function runtimeEvent(event:ResearchEvent){
 }
 
 async function openProject(root:string){
-  if(active)throw new Error('请先停止当前任务，再切换项目');
+  if(active||pendingOperations)throw new Error('请等待当前操作结束，再切换项目');
   if(project?.root===resolve(root))return {...project.snapshot(),events:project.eventsAfter(0)};
   let next:ProjectService;
   if(!existsSync(join(root,'.cyz/project.json'))){
@@ -47,6 +53,7 @@ async function openProject(root:string){
   }else next=await ProjectService.open(root);
   const previous=project;project=next;taskId=undefined;engine?.close();engine=undefined;previous?.close();
   project.db.prepare("UPDATE tasks SET status='reconciling' WHERE status IN ('queued','running','waiting_user','stopping')").run();
+  project.db.prepare("UPDATE conversions SET status=CASE WHEN status='preparing' THEN 'failed' ELSE 'reconciling' END WHERE status IN ('preparing','sample_submitting','full_submitting')").run();
   return {...project.snapshot(),events:project.eventsAfter(0)};
 }
 
@@ -71,10 +78,15 @@ async function setup(){
     if(typeof content!=='string'||content.length>5_000_000||(base!==null&&typeof base!=='string')||(hash!==null&&(typeof hash!=='string'||!/^\w{64}$/.test(hash))))throw new Error('INVALID_INPUT');
     return saveDocument(current(id),'03-文献证据矩阵.md',content,base,hash);
   });
+  handler('parsing.list',(id:unknown)=>listConversions(current(id)));
+  handler('parsing.read',(id:unknown,target:unknown)=>readConversion(current(id),text(target,100)));
+  handler('parsing.start',(id:unknown,source:unknown)=>{const service=current(id);return parsingOperation(async()=>startConversion(service,text(source,100),await desk()))});
+  handler('parsing.poll',(id:unknown,target:unknown)=>{const service=current(id);return parsingOperation(async()=>pollConversion(service,text(target,100),await desk()))});
+  handler('parsing.approve',(id:unknown,target:unknown)=>{const service=current(id);return parsingOperation(async()=>approveSample(service,text(target,100),await desk()))});
   handler('candidate.list',(id:unknown,task:unknown)=>listCandidates(current(id),text(task,100)));
   handler('candidate.publish',(id:unknown,task:unknown,path:unknown,hash:unknown)=>publishCandidate(current(id),text(task,100),text(path,220),text(hash,64)));
   handler('task.start',async(id:unknown,stage:unknown,prompt:unknown)=>{
-    const service=current(id);if(active)throw new Error('已有任务正在运行');if(typeof stage!=='string'||!/^S[0-8]$/.test(stage))throw new Error('INVALID_STAGE');const message=text(prompt,30000);
+    const service=current(id);if(active||pendingOperations)throw new Error('请等待当前操作结束');if(typeof stage!=='string'||!/^S[0-8]$/.test(stage))throw new Error('INVALID_STAGE');const message=text(prompt,30000);
     active=true;
     try{
       const prepared=await prepareTask(service,stage,message);taskId=prepared.taskId;
@@ -95,7 +107,7 @@ async function setup(){
   window=new BrowserWindow({width:1480,height:940,minWidth:980,minHeight:680,backgroundColor:'#f5f6f3',show:false,webPreferences:{preload:join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true}});
   window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   window.webContents.on('will-navigate',event=>event.preventDefault());
-  window.on('close',event=>{if(active&&!quitting){event.preventDefault();window.hide();}});
+  window.on('close',event=>{if((active||pendingOperations)&&!quitting){event.preventDefault();window.hide();}});
   await window.loadFile(join(__dirname,'renderer/index.html'));
   window.show();
   tray=new Tray(nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='));

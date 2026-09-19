@@ -11,6 +11,7 @@ export function openDatabase(path: string) {
     CREATE TABLE IF NOT EXISTS versions (id TEXT PRIMARY KEY, artifactId TEXT NOT NULL REFERENCES artifacts(id), hash TEXT NOT NULL, baseVersionId TEXT, state TEXT NOT NULL, createdAt TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS publish_ops (id TEXT PRIMARY KEY, artifactId TEXT NOT NULL REFERENCES artifacts(id), versionId TEXT NOT NULL REFERENCES versions(id), oldHash TEXT, newHash TEXT NOT NULL, phase TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, stageId TEXT NOT NULL, objective TEXT NOT NULL, status TEXT NOT NULL, threadId TEXT, turnId TEXT, runId TEXT NOT NULL, createdAt TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS conversions (id TEXT PRIMARY KEY, sourceId TEXT NOT NULL REFERENCES sources(id), status TEXT NOT NULL, taskId TEXT, sampleTaskId TEXT, paperHash TEXT, mapHash TEXT, createdAt TEXT NOT NULL);
   `);
   return db;
 }

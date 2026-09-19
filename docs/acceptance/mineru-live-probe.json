@@ -1,0 +1,10 @@
+{
+  "recordedAt": "2026-09-19T07:28:23.415Z",
+  "scope": "full",
+  "source": "bundled synthetic two-page PDF",
+  "pages": 2,
+  "containsExpectedText": true,
+  "status": "completed",
+  "sampleApproval": "main agent visual/text inspection before --approve",
+  "cloudUploads": 0
+}

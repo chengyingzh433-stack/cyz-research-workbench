@@ -1,5 +1,6 @@
 import { test, expect, _electron as electron } from '@playwright/test';
-import { mkdtemp,writeFile,readFile } from 'node:fs/promises';
+import { mkdtemp,writeFile,readFile,mkdir } from 'node:fs/promises';
+import {createHash,randomUUID} from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {ProjectService} from '../../packages/project-service/src/project.ts';
@@ -87,5 +88,22 @@ test('edits the existing evidence matrix without dropping surrounding notes',asy
     await page.getByRole('button',{name:'文献材料',exact:true}).click();await page.getByRole('button',{name:'证据矩阵',exact:true}).click();
     await expect(page.getByRole('cell',{name:'P-001',exact:true})).toBeVisible();
     await page.screenshot({path:'.tmp/desktop-matrix.png'});
+  }finally{await app.close()}
+});
+
+test('reads only an integrity-checked parsed cache associated with the source',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'cyz 阅读界面 '));const service=await ProjectService.create(root);
+  const file=join(root,'合成原件.pdf');await writeFile(file,'%PDF test fixture');const source=await service.importSource(file);
+  const id=randomUUID(),cache=join(root,'.cyz/conversions',id,'cache');await mkdir(cache,{recursive:true});
+  const paper='# 合成解析样例\n\n## PDF 第 1 页\n\n只用于界面测试。';const map=JSON.stringify({pdf_sha256:source.sha256,pages:[{pdf_page:1}]});
+  const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
+  await writeFile(join(cache,'paper.md'),paper);await writeFile(join(cache,'source_map.json'),map);
+  service.db.prepare('INSERT INTO conversions(id,sourceId,status,paperHash,mapHash,createdAt) VALUES(?,?,?,?,?,?)').run(id,source.id,'completed',hash(paper),hash(map),new Date().toISOString());service.close();
+  const app=await electron.launch({args:[resolve('dist/main.cjs')],env:{...process.env,CYZ_PROJECT_ROOT:root}});
+  try{
+    const page=await app.firstWindow();await page.getByRole('button',{name:'查看解析结果'}).click();
+    await expect(page.getByLabel('解析文字')).toHaveValue(paper);
+    await expect(page.getByText('全文解析 · 1 页')).toBeVisible();
+    await page.screenshot({path:'.tmp/desktop-reading.png'});
   }finally{await app.close()}
 });

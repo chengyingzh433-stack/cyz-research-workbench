@@ -3,6 +3,7 @@ import {mkdir,readdir,readFile,writeFile,stat} from 'node:fs/promises';
 import {join,dirname} from 'node:path';
 import type {ProjectService} from './project.ts';
 import {projectPath} from './path-policy.ts';
+import {listConversions,readConversion} from './conversions.ts';
 
 export async function prepareTask(service:ProjectService,stage:string,objective:string){
   if(!/^S[0-8]$/.test(stage))throw new Error('INVALID_STAGE');
@@ -39,7 +40,21 @@ export async function prepareTask(service:ProjectService,stage:string,objective:
       await mkdir(dirname(target),{recursive:true});await writeFile(target,bytes,{flag:'wx'});
       record(artifact.relpath,bytes,artifact.currentVersionId);
     }
-    const context=JSON.stringify({stage,projectId:service.metadata.projectId,taskId,runId,files,contextScope:'Root Markdown files and saved artifact versions; sources are catalog metadata, not full text.',artifacts:artifacts.map(a=>({relpath:a.relpath,baseVersionId:a.currentVersionId})),sources:service.snapshot().sources},null,2);
+    const conversions=listConversions(service);
+    const sources=[];
+    for(const source of service.snapshot().sources){
+      const conversion=conversions.filter(job=>job.sourceId===source.id&&job.status==='completed').at(-1);
+      if(!conversion){sources.push(source);continue}
+      const reading=readConversion(service,conversion.id);
+      const bytes=Buffer.from(reading.text);
+      total+=bytes.length;if(total>10*1024*1024)throw new Error('CONTEXT_TOTAL_TOO_LARGE');
+      const readingPath=`02-文献/解析阅读/${source.id}/paper.md`;
+      const target=projectPath(cwd,readingPath,true);
+      await mkdir(dirname(target),{recursive:true});await writeFile(target,bytes,{flag:'wx'});
+      record(readingPath,bytes,null);
+      sources.push({...source,readingPath,conversionId:conversion.id,readingScope:'Parsed text only; image assets and original PDF are not copied. Verify figures and quotations against the original.'});
+    }
+    const context=JSON.stringify({stage,projectId:service.metadata.projectId,taskId,runId,files,contextScope:'Root Markdown, saved artifact versions, and integrity-checked parsed text where a source has readingPath. Other sources are catalog metadata only. Image assets and original PDFs are not included.',artifacts:artifacts.map(a=>({relpath:a.relpath,baseVersionId:a.currentVersionId})),sources},null,2);
     await writeFile(projectPath(service.root,`.cyz/runs/${runId}/context.json`,true),context,{flag:'wx'});
     await writeFile(join(cwd,'CYZ_RUN_CONTEXT.json'),context,{flag:'wx'});
     service.emit('message.user',{taskId,text:objective});

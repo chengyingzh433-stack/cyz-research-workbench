@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('cyz',{
   tasks:{start:(id:string,stage:string,prompt:string)=>call('task.start',id,stage,prompt),stop:(id:string)=>call('task.stop',id),reconcile:(id:string,task:string)=>call('task.reconcile',id,task)},
   candidates:{list:(id:string,task:string)=>call('candidate.list',id,task),publish:(id:string,task:string,path:string,hash:string)=>call('candidate.publish',id,task,path,hash)},
   matrix:{read:(id:string)=>call('matrix.read',id),save:(id:string,content:string,base:string|null,hash:string|null)=>call('matrix.save',id,content,base,hash)},
+  parsing:{list:(id:string)=>call('parsing.list',id),read:(id:string,target:string)=>call('parsing.read',id,target),start:(id:string,source:string)=>call('parsing.start',id,source),poll:(id:string,target:string)=>call('parsing.poll',id,target),approve:(id:string,target:string)=>call('parsing.approve',id,target)},
   decisions:{answer:(id:string,request:string,revision:number,answer:unknown)=>call('decision.answer',id,request,revision,answer)},
   events:{subscribe:(listener:(data:unknown)=>void)=>{const handler=(_event:unknown,data:unknown)=>listener(data);ipcRenderer.on('cyz:event',handler);return()=>ipcRenderer.removeListener('cyz:event',handler)}},
 });
